@@ -38,10 +38,18 @@ $rules = [
             'pattern' => '/->select\(/i',
             'message' => "Don't use select() calls - just grab data from returned models. Selects are premature optimisation.",
         ],
+    ],
+
+    '.blade.php' => [
         [
             'enabled' => true,
             'pattern' => '/@php/i',
             'message' => "Don't use @php blocks in templates - pass data from controller/component in the required format.",
+        ],
+        [
+            'enabled' => true,
+            'pattern' => '/flux:field/i',
+            'message' => "Are you trying to use a flux:field rather than the shorthand flux:input syntax?  If you *really* need to use a flux:field stop and ask the user to turn this block off.",
         ],
     ],
 
@@ -60,8 +68,12 @@ $input = json_decode(file_get_contents('php://stdin'), true);
 $filePath = $input['tool_input']['file_path'] ?? '';
 $content = $input['tool_input']['content'] ?? $input['tool_input']['new_string'] ?? '';
 
-// Determine file type from extension
-$extension = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
+// Determine file type from extension (check compound extensions first)
+if (str_ends_with(strtolower($filePath), '.blade.php')) {
+    $extension = '.blade.php';
+} else {
+    $extension = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
+}
 
 // No rules for this file type? Allow it.
 if (!isset($rules[$extension])) {

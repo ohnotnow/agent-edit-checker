@@ -1,8 +1,13 @@
 #!/usr/bin/env php
 <?php
-
 $rules = [
     'php' => [
+        [
+            'enabled' => true,
+            'pattern' => '/^\s*it\s*\(\s*[\'\"]/m',
+            'max_matches' => 1,
+            'message' => "Only write ONE test at a time. Red/green/refactor means one test, see it fail, make it pass, then refactor.",
+        ],
         [
             'enabled' => true,
             'pattern' => '/try\s*\{/i',
@@ -39,7 +44,6 @@ $rules = [
             'message' => "Don't use select() calls - just grab data from returned models. Selects are premature optimisation.",
         ],
     ],
-
     '.blade.php' => [
         [
             'enabled' => true,
@@ -52,17 +56,13 @@ $rules = [
             'message' => "Are you trying to use a flux:field rather than the shorthand flux:input syntax?  If you *really* need to use a flux:field stop and ask the user to turn this block off.",
         ],
     ],
-
     'py' => [
     ],
-
     'go' => [
     ],
-    
     'js' => [
     ],
 ];
-
 
 $input = json_decode(file_get_contents('php://stdin'), true);
 $filePath = $input['tool_input']['file_path'] ?? '';
@@ -86,8 +86,15 @@ foreach ($rules[$extension] as $rule) {
     if (!$rule['enabled']) {
         continue;
     }
-    if (preg_match($rule['pattern'], $content)) {
-        $violations[] = $rule['message'];
+    if (isset($rule['max_matches'])) {
+        $count = preg_match_all($rule['pattern'], $content);
+        if ($count > $rule['max_matches']) {
+            $violations[] = $rule['message'];
+        }
+    } else {
+        if (preg_match($rule['pattern'], $content)) {
+            $violations[] = $rule['message'];
+        }
     }
 }
 
@@ -100,4 +107,3 @@ if ($violations) {
 }
 
 exit(0);
-

@@ -4,7 +4,7 @@ $rules = [
     'php' => [
         [
             'enabled' => true,
-            'pattern' => '/^\s*it\s*\(\s*[\'\"]/m',
+            'pattern' => '/^\s*(it|test)\s*\(\s*[\'\"]/m',
             'max_matches' => 1,
             'message' => "Only write ONE test at a time. Red/green/refactor means one test, see it fail, make it pass, then refactor.",
         ],

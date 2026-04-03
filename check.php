@@ -67,6 +67,7 @@ $rules = [
 $input = json_decode(file_get_contents('php://stdin'), true);
 $filePath = $input['tool_input']['file_path'] ?? '';
 $content = $input['tool_input']['content'] ?? $input['tool_input']['new_string'] ?? '';
+$oldContent = $input['tool_input']['old_string'] ?? '';
 
 // Determine file type from extension (check compound extensions first)
 if (str_ends_with(strtolower($filePath), '.blade.php')) {
@@ -87,10 +88,11 @@ foreach ($rules[$extension] as $rule) {
         continue;
     }
     if (isset($rule['max_matches'])) {
-        $count = preg_match_all($rule['pattern'], $content);
-        if ($count > $rule['max_matches']) {
-            $violations[] = $rule['message'];
-        }
+      $newCount = preg_match_all($rule['pattern'], $content);
+      $oldCount = preg_match_all($rule['pattern'], $oldContent);
+      if (($newCount - $oldCount) > $rule['max_matches']) {
+          $violations[] = $rule['message'];
+      }
     } else {
         if (preg_match($rule['pattern'], $content)) {
             $violations[] = $rule['message'];

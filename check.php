@@ -56,6 +56,18 @@ $rules = [
             'message' => "Are you trying to use a flux:field rather than the shorthand flux:input syntax?  If you *really* need to use a flux:field stop and ask the user to turn this block off.",
         ],
     ],
+    'migration.php' => [
+        [
+            'enabled' => true,
+            'pattern' => '/->float\s*\(/i',
+            'message' => "Don't use float columns - use integers and multiply/divide in code. Ask the user if unsure.",
+        ],
+        [
+            'enabled' => true,
+            'pattern' => '/->decimal\s*\(/i',
+            'message' => "Don't use decimal columns - use intefers and multiply/divide in code. Ask the user if you really need this.",
+        ],
+    ],
     'py' => [
     ],
     'go' => [
@@ -72,6 +84,8 @@ $oldContent = $input['tool_input']['old_string'] ?? '';
 // Determine file type from extension (check compound extensions first)
 if (str_ends_with(strtolower($filePath), '.blade.php')) {
     $extension = '.blade.php';
+} elseif (preg_match('#database/migrations/\d+_\d+_\d+_\d+_#', $filePath)) {
+    $extension = 'migration.php';
 } else {
     $extension = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
 }

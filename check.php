@@ -35,6 +35,11 @@ $rules = [
         ],
         [
             'enabled' => true,
+            'pattern' => '/[^\s]Raw/',
+            'message' => "Don't use raw Eloquent database methods - use Eloquent's fluent named methods. Ask the user if you really need this.",
+        ],
+        [
+            'enabled' => true,
             'pattern' => '/assertDatabase/i',
             'message' => "Don't use raw database assertions - use Eloquent to verify domain/business logic works. Ask the user if you really need this.",
         ],

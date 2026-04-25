@@ -12,6 +12,17 @@ $rules = [
             ],
         ],
     ],
+    'env' => [
+        'command_pattern' => '/(\.env\b|\bdeclare\s+-x\b|\bexport\s+\w+)/',
+        'checks' => [
+            [
+                'enabled' => true,
+                'type' => 'forbid',
+                'pattern' => '/(\.env\b|\bdeclare\s+-x\b|\bexport\s+\w+)/',
+                'message' => "Never read or modify .env, run declare -x, or export env vars without explicit permission.  Ask first.",
+            ],
+        ],
+    ],
 ];
 
 $input = json_decode(file_get_contents('php://stdin'), true);

@@ -13,13 +13,20 @@ $rules = [
         ],
     ],
     'env' => [
-        'command_pattern' => '/(\.env\b|\bdeclare\s+-x\b|\bexport\s+\w+)/',
+        // Loose gate — fast triage of commands worth examining.
+        'command_pattern' => '/(\.env\b|\bdeclare\b|\bexport\b|\bprintenv\b|\benv\b)/',
         'checks' => [
             [
                 'enabled' => true,
                 'type' => 'forbid',
-                'pattern' => '/(\.env\b|\bdeclare\s+-x\b|\bexport\s+\w+)/',
-                'message' => "Never read or modify .env, run declare -x, or export env vars without explicit permission.  Ask first.",
+                // Tight forbid pattern: env-dump / env-mutate commands must
+                // sit at a shell command boundary (start, after ;, &, |,
+                // newline, or '(' ), not buried in a string argument like
+                // an --description value. The (?=\s|$|\|) lookahead matches
+                // the command followed by whitespace, end-of-line, or a
+                // pipe — so 'envsubst' and 'environment' don't trigger.
+                'pattern' => '/(\.env\b|(?:^|[;\n&|(]\s*)(?:declare|export|printenv|env)(?=\s|$|\|))/',
+                'message' => "Never read or modify .env, dump env vars (declare/export/printenv/env), or set new ones without explicit permission. Ask first.",
             ],
         ],
     ],

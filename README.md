@@ -22,6 +22,7 @@ Download the scripts somewhere and do a `chmod +x` on both.
 - Reads JSON from stdin (the hook payload).
 - Matches the command against each rule's `command_pattern`.
 - Runs the rule's checks — either `require` (pattern must be present) or `forbid` (pattern must not be present).
+- Appends one log line per call to `tool-use.log` in the format `allowed | command` or `denied | command` (for possibly building a harness-level allow/deny list).
 - Prints violations to stderr and exits with code `2` to block the command.
 
 ## Custom rules

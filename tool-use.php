@@ -34,6 +34,7 @@ $rules = [
 
 $input = json_decode(file_get_contents('php://stdin'), true);
 $command = $input['tool_input']['command'] ?? '';
+$logPath = __DIR__ . '/tool-use.log';
 
 $violations = [];
 foreach ($rules as $name => $rule) {
@@ -52,6 +53,10 @@ foreach ($rules as $name => $rule) {
         }
     }
 }
+
+$decision = $violations ? 'denied' : 'allowed';
+$logCommand = str_replace(["\r", "\n"], ['\r', '\n'], $command);
+@file_put_contents($logPath, "{$decision} | {$logCommand}\n", FILE_APPEND | LOCK_EX);
 
 if ($violations) {
     foreach ($violations as $msg) {

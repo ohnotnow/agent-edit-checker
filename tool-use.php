@@ -2,13 +2,46 @@
 <?php
 $rules = [
     'pest' => [
-        'command_pattern' => '/\b(pest|\.\/vendor\/bin\/pest)\b/',
+        'command_pattern' => '/(?:^|\s)(?:\.\/vendor\/bin\/)?pest\b/',
         'checks' => [
             [
                 'enabled' => true,
                 'type' => 'require',
                 'pattern' => '/\s--compact(\s|$)/',
                 'message' => "Pest must be run with --compact to reduce output. Example: ./vendor/bin/pest --compact",
+            ],
+        ],
+    ],
+    'composer' => [
+        'command_pattern' => '/composer\s/',
+        'checks' => [
+            [
+                'enabled' => true,
+                'type' => 'forbid',
+                'pattern' => '/(require|update)/',
+                'message' => "Never run composer require or composer update without explicit permission. Ask first.",
+            ],
+        ],
+    ],
+    'npm' => [
+        'command_pattern' => '/npm\s/',
+        'checks' => [
+            [
+                'enabled' => true,
+                'type' => 'forbid',
+                'pattern' => '/(install|update)/',
+                'message' => "Never run npm install or update without explicit permission. Ask first.",
+            ],
+        ],
+    ],
+    'pypi' => [
+        'command_pattern' => '/(uv|pip|pip3)\s/',
+        'checks' => [
+            [
+                'enabled' => true,
+                'type' => 'forbid',
+                'pattern' => '/(add|install)/',
+                'message' => "Never install or update a package without explicit permission. Ask first.",
             ],
         ],
     ],

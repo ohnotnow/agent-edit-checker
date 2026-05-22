@@ -30,7 +30,7 @@ $rules = [
         ],
         [
             'enabled' => true,
-            'pattern' => '/DB::/i',
+            'pattern' => '/DB::(?!transaction\b)/i',
             'message' => "Don't use raw query builder calls - use Eloquent and model relations. Ask the user if you really need a raw call.",
         ],
         [

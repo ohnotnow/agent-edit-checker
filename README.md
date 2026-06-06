@@ -7,9 +7,30 @@ Three scripts:
 - **`tool-use.php`** — screens shell commands (Bash) by command pattern + regex
 - **`tool-fails.php`** — logs failed tool calls so you can spot recurring failures (passive — it never blocks anything)
 
+Plus **`install.php`**, which wires all three into your global Claude Code settings for you.
+
 ## Installation
 
-Download the scripts somewhere and do a `chmod +x` on both.
+Clone or download the scripts somewhere, then run the installer:
+
+```bash
+php install.php
+```
+
+It adds all three hooks to your global `~/.claude/settings.json` and makes the scripts executable. Before it writes anything it:
+
+- backs your settings up to `settings.json.backup-<timestamp>`,
+- merges with any hooks you already have — it never duplicates or clobbers them,
+- updates the path in place if one of our hooks is already installed but points elsewhere,
+- prints the plan and asks for confirmation.
+
+The command paths it writes are `~`-relative when the repo lives under your home directory (handy if you ever share your settings), or absolute otherwise. Restart Claude Code (or start a new session) for the hooks to take effect.
+
+Flags:
+- `--dry-run` — show the plan and change nothing.
+- `--settings=/path/to/settings.json` — target a different file, e.g. a project's `.claude/settings.json`.
+
+Prefer to wire it up by hand? See [Manual setup](#manual-setup) below.
 
 ## How it works
 
@@ -57,8 +78,8 @@ Each rule has a `command_pattern` (regex to match the command) and a `checks` ar
 - `pattern`: a regex to test against the command
 - `message`: what to show when the check fails
 
-## Claude Code setup
-Add the guardrails as `PreToolUse` hooks and the failure logger as a `PostToolUseFailure` hook (no matcher, so it catches every tool):
+## Manual setup
+`install.php` does all of this for you, but if you'd rather wire it up by hand: add the guardrails as `PreToolUse` hooks and the failure logger as a `PostToolUseFailure` hook (no matcher, so it catches every tool):
 
 ```json
 {
@@ -98,7 +119,7 @@ Add the guardrails as `PreToolUse` hooks and the failure logger as a `PostToolUs
 ```
 
 ## Notes
-- All three scripts expect JSON on stdin from the Claude Code hook system.
+- All three hook scripts expect JSON on stdin from the Claude Code hook system. (`install.php` is the exception — it's a one-off CLI you run yourself, not a hook.)
 - `check.php` reads `tool_input.file_path` and either `tool_input.content` or `tool_input.new_string`.
 - `tool-use.php` reads `tool_input.command`.
 - `tool-fails.php` reads `tool_name`, `tool_input`, `error`, and `is_interrupt`.

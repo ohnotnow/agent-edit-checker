@@ -52,6 +52,7 @@ $targets = [
     ['event' => 'PreToolUse',         'matcher' => 'Write|Edit', 'script' => 'check.php'],
     ['event' => 'PreToolUse',         'matcher' => 'Bash',       'script' => 'tool-use.php'],
     ['event' => 'PostToolUseFailure', 'matcher' => null,         'script' => 'tool-fails.php'],
+    ['event' => 'UserPromptSubmit',   'matcher' => null,         'script' => 'prompt-context.php'],
 ];
 
 // Build the command we'll write for a script: a ~-relative path when the clone

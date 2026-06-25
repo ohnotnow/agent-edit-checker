@@ -47,7 +47,7 @@ $rules = [
     ],
     'env' => [
         // Loose gate — fast triage of commands worth examining.
-        'command_pattern' => '/(\.env\b|\bdeclare\b|\bexport\b|\bprintenv\b|\benv\b)/',
+        'command_pattern' => '/(\.env\b|\bdeclare\b|\bexport\b|\bprintenv\b|\benv\b|config:show)/',
         'checks' => [
             [
                 'enabled' => true,

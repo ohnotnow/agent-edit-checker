@@ -6,6 +6,7 @@ Three scripts:
 - **`check.php`** — screens file edits (Write/Edit) by file extension + regex
 - **`tool-use.php`** — screens shell commands (Bash) by command pattern + regex
 - **`tool-fails.php`** — logs failed tool calls so you can spot recurring failures (passive — it never blocks anything)
+- **`prompt-context.php`** - allows you to inject extra context to your prompt based on regex matches
 
 Plus **`install.php`**, which wires all three into your global Claude Code settings for you.
 
@@ -17,7 +18,7 @@ Clone or download the scripts somewhere, then run the installer:
 php install.php
 ```
 
-It adds all three hooks to your global `~/.claude/settings.json` and makes the scripts executable. Before it writes anything it:
+It adds all four hooks to your global `~/.claude/settings.json` and makes the scripts executable. Before it writes anything it:
 
 - backs your settings up to `settings.json.backup-<timestamp>`,
 - merges with any hooks you already have — it never duplicates or clobbers them,
@@ -53,6 +54,11 @@ Prefer to wire it up by hand? See [Manual setup](#manual-setup) below.
 - Appends one line per failure to `tool-fails.log` in the format `timestamp | tool | detail | error` (newlines in the error are flattened to `\n` so each failure stays on one line).
 - `detail` is the Bash `command`, falling back to `file_path` for Write/Edit/Read, then the raw tool input for anything else.
 - Purely passive: it always exits `0` and never blocks a call. It exists to build up empirical data on what fails repeatedly — dodgy CLI flags, BSD-vs-GNU differences, and the like.
+
+### prompt-context.php (prompt context)
+- Reads JSON from stdin (the hook payload).
+- Scans the incoming content for any enabled rule patterns.
+- If a match is found - adds the rules additional content to the prompt and then submits it to claude as usual.
 
 **Caveat — piped commands hide failures.** `PostToolUseFailure` fires on the *tool call's* exit code, and a pipeline reports the exit code of its *last* command. So `some-cmd | head`, `some-cmd | grep …`, or `some-cmd || true` look successful even when `some-cmd` failed, and won't be logged. Bare failing commands are caught fine.
 

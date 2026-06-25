@@ -16,6 +16,22 @@ A question mark slipped into this prompt — pause before you reach for a tool. 
 TXT,
     ],
 
+    [
+        'enabled' => true,
+        'pattern' => '/\bkk\b/',
+        'message' => <<<'TXT'
+A `kk` slipped into this prompt — verify before you answer. Judge the claim first: is it volatile (prices, versions, limits, anything "current"), specific (a number, date, a name), or something the user will act on? If so, check a real source before answering — web search and fetch the actual docs for external facts, the actual files or commands for local ones. Don't answer from memory, even when you're confident. Stable, conceptual knowledge you can answer directly. When you're unsure, verify. Cite where you checked each claim.
+TXT,
+    ],
+
+    [
+        'enabled' => true,
+        'pattern' => '/\b(recommend|how should (we|i)|which (option|approach)|what.?s your (thinking|take)|should (we|i) use)\b/i',
+        'message' => <<<'TXT'
+This looks like you're being asked for a recommendation, an opinion, or a "which approach" call. If it touches this codebase, load the `grounded-recommendation` skill if available and read the relevant code first — don't recommend from memory or from what you assume the code does.
+TXT,
+    ],
+
     // Disabled global example — matches every prompt. See the message for why
     // it's off, and why CLAUDE.md is almost always the better home.
     [

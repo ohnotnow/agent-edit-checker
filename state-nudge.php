@@ -93,6 +93,17 @@ if ($toolName === 'Read') {
     $state['dirty'][$filePath] = $state['dirty'][$filePath] ?? time();
 }
 
+// A dirty file that has since been deleted is no longer live state — and
+// because Bash isn't matched, an rm never clears its entry, so left in place
+// it would pin the set at the threshold and keep the nudge disarmed for the
+// rest of the session (found in live testing). The set is small, so a stat
+// per entry costs nothing.
+foreach (array_keys($state['dirty']) as $dirtyPath) {
+    if (!is_file($dirtyPath)) {
+        unset($state['dirty'][$dirtyPath]);
+    }
+}
+
 $dirtyCount = count($state['dirty']);
 if ($dirtyCount < $dirtyThreshold) {
     $state['armed'] = true;

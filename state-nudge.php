@@ -18,6 +18,10 @@
 //   state/<session_id>.json (plus the agent_id for subagent calls, so a
 //   subagent gets its own dirty set — and its own nudge, in its own
 //   transcript — without polluting the parent's count).
+// - The threshold is per-model: drift-prone models (haiku) get a short leash,
+//   models that hold state well (fable) a longer one. The model is sniffed from
+//   the transcript tail, and only once the set has already reached the default
+//   threshold — the quiet path never reads the transcript.
 // - Fires once when the dirty set reaches $dirtyThreshold, then disarms.
 //   Re-arms only when re-reading shrinks the set back below the threshold.
 //   A session that re-reads as it goes never fires at all — rare firing is
@@ -43,12 +47,56 @@
 // PostToolUse fires only on tool *success*, so a failed Read never wrongly
 // clears a dirty flag. Always exit 0 — this hook never blocks anything.
 
-$dirtyThreshold = 10;          // fire when this many files are edited-but-not-reread
+$defaultDirtyThreshold = 5;   // fire when this many files are edited-but-not-reread
+// Per-model overrides — first substring match on the transcript's model id wins;
+// unmatched (and future) models get the default. Subagent calls (agent_id set)
+// always get the default, unsniffed: short-lived workers don't need a longer
+// leash. (If per-model subagent thresholds are ever wanted: a subagent's turns
+// are NOT in the parent transcript — they get their own file at
+// <projects-dir>/<session-id>/subagents/agent-<agent_id>.jsonl, model on every
+// assistant line; the .meta.json sidecar there has NO model. Verified 2026-07-03.)
+$modelDirtyThresholds = [
+    'haiku' => 5,
+    'opus' => 7,
+    'fable' => 10,
+    'mythos' => 10, // same model as fable, different badge
+];
 $aitTimeoutSeconds = 3;       // give up on the ait lookup after this long
 $staleStateAgeSeconds = 48 * 3600; // old session state files are pruned on the firing path
 
 $stateDir = __DIR__ . '/state';
 $logPath = __DIR__ . '/state-nudge.log';
+
+// --- model → threshold ---------------------------------------------------------
+
+// The last claude-* model id in the transcript's tail, or null when undetectable.
+// Assistant lines carry message.model; the claude- prefix skips "<synthetic>"
+// entries, and last-match-wins honours a mid-session /model switch.
+function detect_model(string $transcriptPath): ?string
+{
+    $size = @filesize($transcriptPath);
+    if ($size === false || $size === 0) {
+        return null;
+    }
+    $fh = @fopen($transcriptPath, 'r');
+    if ($fh === false) {
+        return null;
+    }
+    fseek($fh, max(0, $size - 32768));
+    $tail = (string) stream_get_contents($fh);
+    fclose($fh);
+    return preg_match_all('/"model":"(claude-[^"]*)"/', $tail, $matches) ? end($matches[1]) : null;
+}
+
+function threshold_for_model(?string $model, array $thresholds, int $default): int
+{
+    foreach ($thresholds as $needle => $threshold) {
+        if ($model !== null && str_contains($model, $needle)) {
+            return $threshold;
+        }
+    }
+    return $default;
+}
 
 $input = json_decode((string) file_get_contents('php://stdin'), true);
 if (!is_array($input)) {
@@ -59,6 +107,7 @@ $toolName = $input['tool_name'] ?? '';
 $filePath = $input['tool_input']['file_path'] ?? '';
 $sessionId = $input['session_id'] ?? '';
 $agentId = $input['agent_id'] ?? ''; // present only when the call came from a subagent
+$transcriptPath = $input['transcript_path'] ?? '';
 $cwd = $input['cwd'] ?? getcwd();
 
 // Defensive: the installer sets a Write|Edit|Read matcher, but don't rely on it.
@@ -105,6 +154,17 @@ foreach (array_keys($state['dirty']) as $dirtyPath) {
 }
 
 $dirtyCount = count($state['dirty']);
+
+// Resolve this call's threshold. Below the default every model behaves the same,
+// so the transcript sniff only runs once the set has reached it (and never for
+// subagents, which always take the default).
+$dirtyThreshold = $defaultDirtyThreshold;
+$model = null;
+if ($agentId === '' && $dirtyCount >= $defaultDirtyThreshold) {
+    $model = detect_model($transcriptPath);
+    $dirtyThreshold = threshold_for_model($model, $modelDirtyThresholds, $defaultDirtyThreshold);
+}
+
 if ($dirtyCount < $dirtyThreshold) {
     $state['armed'] = true;
 }
@@ -218,7 +278,7 @@ function minutes_ago(int $timestamp): string
 asort($state['dirty']); // oldest edit first — the most-drifted file at the top
 $fileLines = [];
 foreach ($state['dirty'] as $path => $since) {
-    $fileLines[] = "- {$path} (edited " . minutes_ago((int) $since) . ', not re-read since)';
+    $fileLines[] = "- {$path} (first edited " . minutes_ago((int) $since) . ', not re-read since)';
 }
 
 $message = "State-load nudge (automatic: your count of edited-but-not-reread files just reached {$dirtyCount}).\n\n"
@@ -237,7 +297,8 @@ foreach (glob($stateDir . '/*.json') ?: [] as $old) {
     }
 }
 
-$logLine = date('Y-m-d H:i:s') . " | {$stateKey} | fired at {$dirtyCount} | " . implode(', ', array_keys($state['dirty'])) . "\n";
+$modelLabel = $model ?? ($agentId !== '' ? 'subagent-default' : 'unknown');
+$logLine = date('Y-m-d H:i:s') . " | {$stateKey} | fired at {$dirtyCount} (threshold {$dirtyThreshold}, model {$modelLabel}) | " . implode(', ', array_keys($state['dirty'])) . "\n";
 @file_put_contents($logPath, $logLine, FILE_APPEND | LOCK_EX);
 
 echo json_encode([

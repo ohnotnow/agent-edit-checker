@@ -2,13 +2,14 @@
 
 Tiny guardrail scripts for Claude Code. They inspect proposed edits and shell commands, blocking anything that matches rules you define.
 
-Three scripts:
+The scripts:
 - **`check.php`** — screens file edits (Write/Edit) by file extension + regex
 - **`tool-use.php`** — screens shell commands (Bash) by command pattern + regex
 - **`tool-fails.php`** — logs failed tool calls so you can spot recurring failures (passive — it never blocks anything)
 - **`prompt-context.php`** - allows you to inject extra context to your prompt based on regex matches
+- **`state-nudge.php`** — tracks files the agent has edited but not re-read, and nudges it to re-read them when the count crosses a threshold (passive — it never blocks anything)
 
-Plus **`install.php`**, which wires all three into your global Claude Code settings for you.
+Plus **`install.php`**, which wires them all into your global Claude Code settings for you.
 
 ## Installation
 
@@ -60,6 +61,16 @@ Prefer to wire it up by hand? See [Manual setup](#manual-setup) below.
 - Scans the incoming content for any enabled rule patterns.
 - If a match is found - adds the rules additional content to the prompt and then submits it to claude as usual.
 
+### state-nudge.php (state-load nudge)
+A `PostToolUse` hook (matcher `Write|Edit|Read`) built on a finding from the world-model-collapse paper (arXiv 2606.31399): an agent's internal picture of the files it's juggling goes stale *silently*, before any action visibly fails — so "should I re-check?" can't be left to the agent's judgement. This hook makes the trigger deterministic instead:
+
+- `Write`/`Edit` marks a file **dirty**; `Read` clears it. The dirty set is tracked per session in `state/<session_id>.json` (subagents get their own file, keyed by `agent_id`, so a busy subagent neither pollutes the parent's count nor misses its own nudge).
+- When the dirty set reaches **5 files**, the hook injects the set itself into the agent's context — each path, how stale it is, and an instruction to re-read — then disarms. It re-arms only once re-reading shrinks the set back below the threshold, so an agent that re-reads as it goes never hears from it at all. Rare firing is deliberate: a nudge that fires constantly becomes wallpaper.
+- On the (rare) firing path only, it also walks up from the session's `cwd` looking for an `ait` (agent issue tracker) database and appends the in-progress issue(s) to the nudge. Missing db, missing binary, timeout, bad JSON — the ait clause is silently omitted.
+- Firings are logged to `state-nudge.log`; state files from long-dead sessions are pruned opportunistically.
+
+Some imprecision is deliberate (see the comment in the script): `grep`/`cat` glances don't clear the dirty flag, and a brand-new `Write` counts as dirty. Resist the urge to add a taxonomy of edit types — the counter is meant to be cheap and legible.
+
 **Caveat — piped commands hide failures.** `PostToolUseFailure` fires on the *tool call's* exit code, and a pipeline reports the exit code of its *last* command. So `some-cmd | head`, `some-cmd | grep …`, or `some-cmd || true` look successful even when `some-cmd` failed, and won't be logged. Bare failing commands are caught fine.
 
 ## Custom rules
@@ -110,6 +121,17 @@ Each rule has a `command_pattern` (regex to match the command) and a `checks` ar
         ]
       }
     ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/path/to/agent-edit-checker/state-nudge.php"
+          }
+        ]
+      }
+    ],
     "PostToolUseFailure": [
       {
         "hooks": [
@@ -129,4 +151,5 @@ Each rule has a `command_pattern` (regex to match the command) and a `checks` ar
 - `check.php` reads `tool_input.file_path` and either `tool_input.content` or `tool_input.new_string`.
 - `tool-use.php` reads `tool_input.command`.
 - `tool-fails.php` reads `tool_name`, `tool_input`, `error`, and `is_interrupt`.
-- For the `PreToolUse` guardrails, exit code `0` allows the action and exit code `2` blocks it. `tool-fails.php` is a logger and always exits `0`.
+- `state-nudge.php` reads `session_id`, `agent_id`, `cwd`, `tool_name`, and `tool_input.file_path`. Unlike the others, its output is the JSON `hookSpecificOutput.additionalContext` envelope on stdout — for `PostToolUse`, plain stdout text does **not** reach the agent.
+- For the `PreToolUse` guardrails, exit code `0` allows the action and exit code `2` blocks it. `tool-fails.php` and `state-nudge.php` are passive and always exit `0`.

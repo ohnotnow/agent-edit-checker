@@ -4,8 +4,8 @@
 // ~/.claude/settings.json. It backs the file up first, merges cleanly with any
 // hooks you already have, and never creates duplicates.
 //
-// It finds check.php / tool-use.php / tool-fails.php by its own location
-// (__DIR__), so you can run it from anywhere:
+// It finds its sibling hook scripts (check.php and friends) by its own
+// location (__DIR__), so you can run it from anywhere:
 //
 //   php install.php             inspect, show the plan, then ask before writing
 //   php install.php --dry-run   show the plan only; never touch any file
@@ -47,12 +47,13 @@ foreach ($args as $arg) {
     }
 }
 
-// The three hooks we install. matcher === null means "no matcher" (all tools).
+// The hooks we install. matcher === null means "no matcher" (all tools).
 $targets = [
-    ['event' => 'PreToolUse',         'matcher' => 'Write|Edit', 'script' => 'check.php'],
-    ['event' => 'PreToolUse',         'matcher' => 'Bash',       'script' => 'tool-use.php'],
-    ['event' => 'PostToolUseFailure', 'matcher' => null,         'script' => 'tool-fails.php'],
-    ['event' => 'UserPromptSubmit',   'matcher' => null,         'script' => 'prompt-context.php'],
+    ['event' => 'PreToolUse',         'matcher' => 'Write|Edit',      'script' => 'check.php'],
+    ['event' => 'PreToolUse',         'matcher' => 'Bash',            'script' => 'tool-use.php'],
+    ['event' => 'PostToolUse',        'matcher' => 'Write|Edit|Read', 'script' => 'state-nudge.php'],
+    ['event' => 'PostToolUseFailure', 'matcher' => null,              'script' => 'tool-fails.php'],
+    ['event' => 'UserPromptSubmit',   'matcher' => null,              'script' => 'prompt-context.php'],
 ];
 
 // Build the command we'll write for a script: a ~-relative path when the clone

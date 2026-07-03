@@ -1,3 +1,5 @@
 .ait*
 tool-use.log
 tool-fails.log
+state-nudge.log
+state/

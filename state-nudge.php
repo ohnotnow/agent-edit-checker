@@ -43,7 +43,7 @@
 // PostToolUse fires only on tool *success*, so a failed Read never wrongly
 // clears a dirty flag. Always exit 0 — this hook never blocks anything.
 
-$dirtyThreshold = 5;          // fire when this many files are edited-but-not-reread
+$dirtyThreshold = 10;          // fire when this many files are edited-but-not-reread
 $aitTimeoutSeconds = 3;       // give up on the ait lookup after this long
 $staleStateAgeSeconds = 48 * 3600; // old session state files are pruned on the firing path
 

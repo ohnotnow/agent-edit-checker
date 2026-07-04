@@ -18,6 +18,8 @@
 //   state/<session_id>.json (plus the agent_id for subagent calls, so a
 //   subagent gets its own dirty set — and its own nudge, in its own
 //   transcript — without polluting the parent's count).
+// - Files under temp prefixes (/tmp, /private, /var/folders) are ignored
+//   entirely — scratch output isn't world-state the agent must keep synced.
 // - The threshold is per-model: drift-prone models (haiku) get a short leash,
 //   models that hold state well (fable) a longer one. The model is sniffed from
 //   the transcript tail, and only once the set has already reached the default
@@ -113,6 +115,19 @@ $cwd = $input['cwd'] ?? getcwd();
 // Defensive: the installer sets a Write|Edit|Read matcher, but don't rely on it.
 if ($sessionId === '' || $filePath === '' || !in_array($toolName, ['Write', 'Edit', 'Read'], true)) {
     exit(0);
+}
+
+// Temp-dir files (session scratchpads, ad-hoc /tmp scribbles) are throwaway by
+// definition, not remembered world-state — and being write-once they never get
+// re-read, so they'd waste the single firing on a low-stakes set and then pin
+// the count at the threshold, keeping the nudge disarmed for the session.
+// Broad prefixes on purpose: real work never lives here, and this survives the
+// scratchpad path format changing. /private is the macOS spelling of /tmp;
+// /var/folders is macOS $TMPDIR.
+foreach (['/tmp/', '/private/', '/var/folders/'] as $tempPrefix) {
+    if (str_starts_with($filePath, $tempPrefix)) {
+        exit(0);
+    }
 }
 
 if (!is_dir($stateDir) && !@mkdir($stateDir, 0755, true)) {

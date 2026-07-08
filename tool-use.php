@@ -1,5 +1,8 @@
 #!/usr/bin/env php
 <?php
+// Human co-author trailers are fine — this only matches AI/vendor attribution.
+$aiAttributionPattern = '/co-authored-by:.*\b(claude|anthropic|openai|codex|gpt)\b|generated with.*\bclaude\b|noreply@anthropic\.com/i';
+
 $rules = [
     'pest' => [
         'command_pattern' => '/(?:^|\s)(?:\.\/vendor\/bin\/)?pest\b/',
@@ -60,6 +63,28 @@ $rules = [
                 // pipe — so 'envsubst' and 'environment' don't trigger.
                 'pattern' => '/(\.env\b|(?:^|[;\n&|(]\s*)(?:declare|export|printenv|env)(?=\s|$|\|))/',
                 'message' => "Never read or modify .env, dump env vars (declare/export/printenv/env), or set new ones without explicit permission. Ask first.",
+            ],
+        ],
+    ],
+    'git-commit-attribution' => [
+        'command_pattern' => '/git\s+commit/',
+        'checks' => [
+            [
+                'enabled' => true,
+                'type' => 'forbid',
+                'pattern' => $aiAttributionPattern,
+                'message' => "Do NOT add AI attribution to commits. No Co-Authored-By trailers, no 'Generated with Claude Code' footers. Re-run the commit with those lines removed.",
+            ],
+        ],
+    ],
+    'gh-pr-attribution' => [
+        'command_pattern' => '/gh\s+pr\s+(create|edit)/',
+        'checks' => [
+            [
+                'enabled' => true,
+                'type' => 'forbid',
+                'pattern' => $aiAttributionPattern,
+                'message' => "Do NOT add AI attribution to pull requests. No 'Generated with Claude Code' footers, no Co-Authored-By trailers. Re-run with those lines removed.",
             ],
         ],
     ],

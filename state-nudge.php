@@ -4,7 +4,8 @@
 // how many files the agent has edited but not re-read, and when that "dirty
 // set" crosses a threshold it injects the set itself back into the agent's
 // context — the files, and how stale each one is — with an instruction to
-// re-read them.
+// re-read them. A second, independent signal — the confidence check — rides
+// the same state file; see Mechanics.
 //
 // Why event-triggered rather than leaving it to the agent's judgement: an
 // agent's internal world-state goes wrong silently, *before* its actions do
@@ -28,6 +29,17 @@
 //   Re-arms only when re-reading shrinks the set back below the threshold.
 //   A session that re-reads as it goes never fires at all — rare firing is
 //   load-bearing.
+// - The confidence check: $confidenceStreakThreshold consecutive Write/Edit
+//   calls without a single Read is the shape of a confident-momentum spiral —
+//   a long friction-free streak of editing from the internal model without
+//   looking at reality (the session that feels like it's going best is the
+//   riskiest). It fires once — the evidence, plus a demand to verify one
+//   unverified assertion and sweep recent output for exposure — then disarms.
+//   Any Read resets the streak and re-arms it. The demand is deliberately a
+//   task, not a question: "are you sure?" can be self-soothed in half a
+//   sentence; "verify one thing and say what you checked" cannot, and it
+//   leaves an audit trail in the transcript for judging whether this nudge
+//   actually works.
 // - Only the rare firing path does anything slow: it looks for an .ait/ db
 //   upward from the session's cwd and appends the in-progress issue(s) to the
 //   nudge. On any failure (no db, no ait binary, timeout, bad JSON) the ait
@@ -39,7 +51,12 @@
 // - a wholesale Write of a brand-new file marks it dirty even though the
 //   agent authored every byte — over-cautious, fine.
 // - a partial Read (offset/limit) DOES clear the flag — over-generous, fine.
-// No taxonomy of edit types. The counter is meant to be cheap and legible.
+// - Bash is invisible here, so a session verifying via tests between edits
+//   still grows the confidence streak, and tool failures (friction that would
+//   honestly reset it) don't reset it either. Accepted: a false firing costs
+//   a minute. If the log shows too many, wire tool-fails.php into the state
+//   file — not before.
+// No taxonomy of edit types. The counters are meant to be cheap and legible.
 //
 // Output contract (verified against code.claude.com/docs/en/hooks, 2026-07-03):
 // PostToolUse injects context ONLY via JSON on stdout —
@@ -63,6 +80,7 @@ $modelDirtyThresholds = [
     'fable' => 10,
     'mythos' => 10, // same model as fable, different badge
 ];
+$confidenceStreakThreshold = 12; // consecutive Write/Edits without one Read fires the confidence check — tune from the log
 $aitTimeoutSeconds = 3;       // give up on the ait lookup after this long
 $staleStateAgeSeconds = 48 * 3600; // old session state files are pruned on the firing path
 
@@ -148,13 +166,19 @@ flock($fh, LOCK_EX);
 
 $state = json_decode((string) stream_get_contents($fh), true);
 if (!is_array($state) || !is_array($state['dirty'] ?? null)) {
-    $state = ['dirty' => [], 'armed' => true];
+    $state = ['dirty' => [], 'armed' => true, 'streak' => 0, 'confidence_armed' => true];
 }
 
 if ($toolName === 'Read') {
     unset($state['dirty'][$filePath]);
+    $state['streak'] = 0; // any Read is friction: it resets (and re-arms) the confidence check
+    unset($state['streak_started']);
 } else {
     $state['dirty'][$filePath] = $state['dirty'][$filePath] ?? time();
+    $state['streak'] = (int) ($state['streak'] ?? 0) + 1;
+    if ($state['streak'] === 1) {
+        $state['streak_started'] = time();
+    }
 }
 
 // A dirty file that has since been deleted is no longer live state — and
@@ -169,6 +193,7 @@ foreach (array_keys($state['dirty']) as $dirtyPath) {
 }
 
 $dirtyCount = count($state['dirty']);
+$streak = (int) ($state['streak'] ?? 0);
 
 // Resolve this call's threshold. Below the default every model behaves the same,
 // so the transcript sniff only runs once the set has reached it (and never for
@@ -184,9 +209,21 @@ if ($dirtyCount < $dirtyThreshold) {
     $state['armed'] = true;
 }
 
-$fire = ($state['armed'] ?? true) && $dirtyCount >= $dirtyThreshold;
-if ($fire) {
+$dirtyFire = ($state['armed'] ?? true) && $dirtyCount >= $dirtyThreshold;
+if ($dirtyFire) {
     $state['armed'] = false;
+}
+
+// The confidence check is an independent signal with the same hysteresis:
+// fire once at the threshold, disarm, re-arm only via the Read that resets
+// the streak. Sessions that look before they leap never hear it.
+if ($streak < $confidenceStreakThreshold) {
+    $state['confidence_armed'] = true;
+}
+
+$confidenceFire = ($state['confidence_armed'] ?? true) && $streak >= $confidenceStreakThreshold;
+if ($confidenceFire) {
+    $state['confidence_armed'] = false;
 }
 
 ftruncate($fh, 0);
@@ -196,7 +233,7 @@ fflush($fh);
 flock($fh, LOCK_UN);
 fclose($fh);
 
-if (!$fire) {
+if (!$dirtyFire && !$confidenceFire) {
     exit(0);
 }
 
@@ -290,20 +327,42 @@ function minutes_ago(int $timestamp): string
     return $minutes < 1 ? 'just now' : "{$minutes}m ago";
 }
 
-asort($state['dirty']); // oldest edit first — the most-drifted file at the top
-$fileLines = [];
-foreach ($state['dirty'] as $path => $since) {
-    $fileLines[] = "- {$path} (first edited " . minutes_ago((int) $since) . ', not re-read since)';
+$messages = [];
+
+if ($dirtyFire) {
+    asort($state['dirty']); // oldest edit first — the most-drifted file at the top
+    $fileLines = [];
+    foreach ($state['dirty'] as $path => $since) {
+        $fileLines[] = "- {$path} (first edited " . minutes_ago((int) $since) . ', not re-read since)';
+    }
+    $messages[] = "State-load nudge (automatic: your count of edited-but-not-reread files just reached {$dirtyCount}).\n\n"
+        . "You are carrying these files as remembered state:\n"
+        . implode("\n", $fileLines) . "\n\n"
+        . 'Drift is silent — an internal model goes stale before any action visibly fails, '
+        . 'so do not trust a feeling of "I remember these fine". Re-read each file above before '
+        . 'editing further; a Read clears a file from this set, and this nudge stays quiet '
+        . 'while the set stays below ' . $dirtyThreshold . '.';
+
+    $modelLabel = $model ?? ($agentId !== '' ? 'subagent-default' : 'unknown');
+    $logLine = date('Y-m-d H:i:s') . " | {$stateKey} | fired at {$dirtyCount} (threshold {$dirtyThreshold}, model {$modelLabel}) | " . implode(', ', array_keys($state['dirty'])) . "\n";
+    @file_put_contents($logPath, $logLine, FILE_APPEND | LOCK_EX);
 }
 
-$message = "State-load nudge (automatic: your count of edited-but-not-reread files just reached {$dirtyCount}).\n\n"
-    . "You are carrying these files as remembered state:\n"
-    . implode("\n", $fileLines) . "\n\n"
-    . 'Drift is silent — an internal model goes stale before any action visibly fails, '
-    . 'so do not trust a feeling of "I remember these fine". Re-read each file above before '
-    . 'editing further; a Read clears a file from this set, and this nudge stays quiet '
-    . 'while the set stays below ' . $dirtyThreshold . '.'
-    . ait_clause((string) $cwd, $aitTimeoutSeconds);
+if ($confidenceFire) {
+    $started = isset($state['streak_started']) ? ' — the first of them ' . minutes_ago((int) $state['streak_started']) : '';
+    $messages[] = "Confidence check (automatic: {$streak} consecutive Write/Edit calls without a single Read{$started}).\n\n"
+        . 'A long friction-free streak of edits is the exact condition where confident-momentum forms: '
+        . "concerns get flagged then flowed past, and the session that feels like it's going best is the riskiest. "
+        . "Before the next edit, do two things:\n"
+        . "1. Name the riskiest thing you have asserted-but-not-verified during this streak, and verify it now — run the command, read the code. Do not reassure yourself from memory.\n"
+        . "2. Sweep what you have written during the streak for exposure: real hostnames, internal IPs, people's names, secrets — none of those belong in code, tests, or notes.\n\n"
+        . 'Report briefly what you checked and what you found before carrying on. A bare "all fine" with nothing named is itself the flagged-then-flowed-past tell.';
+
+    $logLine = date('Y-m-d H:i:s') . " | {$stateKey} | confidence-fired at streak {$streak}\n";
+    @file_put_contents($logPath, $logLine, FILE_APPEND | LOCK_EX);
+}
+
+$message = implode("\n\n", $messages) . ait_clause((string) $cwd, $aitTimeoutSeconds);
 
 // Housekeeping while we're on the rare path: drop state files from long-dead sessions.
 foreach (glob($stateDir . '/*.json') ?: [] as $old) {
@@ -311,10 +370,6 @@ foreach (glob($stateDir . '/*.json') ?: [] as $old) {
         @unlink($old);
     }
 }
-
-$modelLabel = $model ?? ($agentId !== '' ? 'subagent-default' : 'unknown');
-$logLine = date('Y-m-d H:i:s') . " | {$stateKey} | fired at {$dirtyCount} (threshold {$dirtyThreshold}, model {$modelLabel}) | " . implode(', ', array_keys($state['dirty'])) . "\n";
-@file_put_contents($logPath, $logLine, FILE_APPEND | LOCK_EX);
 
 echo json_encode([
     'hookSpecificOutput' => [

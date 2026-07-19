@@ -92,6 +92,15 @@ $logPath = __DIR__ . '/state-nudge.log';
 // The last claude-* model id in the transcript's tail, or null when undetectable.
 // Assistant lines carry message.model; the claude- prefix skips "<synthetic>"
 // entries, and last-match-wins honours a mid-session /model switch.
+//
+// Scans backwards in chunks rather than one fixed 32KB tail: a base64 image
+// tool_result (a screenshot Read) is a single ~550KB line, so a small fixed
+// window can land entirely inside the blob and see no model line at all.
+// Observed live 2026-07-10 (tail-claude session): two "model unknown" firings,
+// both minutes after a PNG Read, in a session where the same sniff had
+// demonstrably worked earlier — a fable session got the default leash of 5.
+// The scan is capped: a transcript with no model line near its end costs a
+// few MB of reads at most, then falls back to the default threshold as before.
 function detect_model(string $transcriptPath): ?string
 {
     $size = @filesize($transcriptPath);
@@ -102,10 +111,28 @@ function detect_model(string $transcriptPath): ?string
     if ($fh === false) {
         return null;
     }
-    fseek($fh, max(0, $size - 32768));
-    $tail = (string) stream_get_contents($fh);
+
+    $chunkSize = 256 * 1024;
+    $overlap = 256;             // catches a match straddling a chunk boundary
+    $maxScan = 4 * 1024 * 1024; // several image blobs deep — beyond that, give up
+
+    $pos = $size;
+    $scanned = 0;
+    while ($pos > 0 && $scanned < $maxScan) {
+        $readFrom = max(0, $pos - $chunkSize);
+        fseek($fh, $readFrom);
+        $window = (string) fread($fh, min($pos + $overlap, $size) - $readFrom);
+        if (preg_match_all('/"model":"(claude-[^"]*)"/', $window, $matches)) {
+            fclose($fh);
+            // Last match in this window is the latest in file order overall:
+            // every window nearer the end has already been scanned matchless.
+            return end($matches[1]);
+        }
+        $scanned += $pos - $readFrom;
+        $pos = $readFrom;
+    }
     fclose($fh);
-    return preg_match_all('/"model":"(claude-[^"]*)"/', $tail, $matches) ? end($matches[1]) : null;
+    return null;
 }
 
 function threshold_for_model(?string $model, array $thresholds, int $default): int

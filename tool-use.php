@@ -16,34 +16,42 @@ $rules = [
         ],
     ],
     'composer' => [
-        'command_pattern' => '/composer\s/',
+        'command_pattern' => '/\bcomposer\s/',
         'checks' => [
             [
                 'enabled' => true,
                 'type' => 'forbid',
-                'pattern' => '/(require|update)/',
+                // Subcommand must directly follow the tool — a bare substring
+                // match here blocked any composer call whose command text
+                // merely contained "update" somewhere (e.g. in a commit
+                // message or file name).
+                'pattern' => '/\bcomposer\s+(require|update)\b/',
                 'message' => "Never run composer require or composer update without explicit permission. Ask first.",
             ],
         ],
     ],
     'npm' => [
-        'command_pattern' => '/npm\s/',
+        'command_pattern' => '/\bnpm\s/',
         'checks' => [
             [
                 'enabled' => true,
                 'type' => 'forbid',
-                'pattern' => '/(install|update)/',
+                'pattern' => '/\bnpm\s+(install|update)\b/',
                 'message' => "Never run npm install or update without explicit permission. Ask first.",
             ],
         ],
     ],
     'pypi' => [
-        'command_pattern' => '/(uv|pip|pip3)\s/',
+        'command_pattern' => '/\b(uv|pip|pip3)\s/',
         'checks' => [
             [
                 'enabled' => true,
                 'type' => 'forbid',
-                'pattern' => '/(add|install)/',
+                // Anchored to the real install forms. The old bare
+                // '/(add|install)/' fired on the substring "add" anywhere in
+                // a command that also mentioned uv — e.g. 'uv run pytest'
+                // bundled with 'ant add', or scripts/add_occasion.py.
+                'pattern' => '/\b(?:uv\s+add|uv\s+pip\s+install|pip3?\s+install)\b/',
                 'message' => "Never install or update a package without explicit permission. Ask first.",
             ],
         ],

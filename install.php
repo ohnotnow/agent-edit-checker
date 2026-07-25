@@ -9,6 +9,7 @@
 //
 //   php install.php             inspect, show the plan, then ask before writing
 //   php install.php --dry-run   show the plan only; never touch any file
+//   php install.php --yes       skip the confirmation prompt (for non-interactive runs)
 //   php install.php --settings=/path/to/settings.json   target a different file
 //
 // The command paths it writes are ~-relative when the clone lives under your
@@ -22,11 +23,21 @@
 $args = array_slice($argv, 1);
 
 if (in_array('--help', $args, true) || in_array('-h', $args, true)) {
-    fwrite(STDOUT, file_get_contents(__FILE__, false, null, 0, 1400));
+    // The help text is the header comment above — print it however long it is.
+    foreach (file(__FILE__) as $line) {
+        if (str_starts_with($line, '#!') || str_starts_with($line, '<?php')) {
+            continue;
+        }
+        if (!str_starts_with($line, '//')) {
+            break;
+        }
+        fwrite(STDOUT, $line);
+    }
     exit(0);
 }
 
 $dryRun = in_array('--dry-run', $args, true);
+$assumeYes = in_array('--yes', $args, true) || in_array('-y', $args, true);
 
 $home = getenv('HOME');
 if ($home === false || $home === '') {
@@ -51,7 +62,7 @@ foreach ($args as $arg) {
 $targets = [
     ['event' => 'PreToolUse',         'matcher' => 'Write|Edit',      'script' => 'check.php'],
     ['event' => 'PreToolUse',         'matcher' => 'Bash',            'script' => 'tool-use.php'],
-    ['event' => 'PostToolUse',        'matcher' => 'Write|Edit|Read', 'script' => 'state-nudge.php'],
+    ['event' => 'PostToolUse',        'matcher' => 'Write|Edit|Read|Agent', 'script' => 'state-nudge.php'],
     ['event' => 'PostToolUseFailure', 'matcher' => null,              'script' => 'tool-fails.php'],
     ['event' => 'UserPromptSubmit',   'matcher' => null,              'script' => 'prompt-context.php'],
 ];
@@ -135,7 +146,7 @@ foreach ($targets as $t) {
     // there's no risk of one matching another. ($group / $hook are objects, so
     // assigning to them mutates $settings in place.)
     $found = false;
-    $changedHere = false;
+    $updates = [];
     foreach ($settings->hooks->{$event} as $group) {
         if (!isset($group->hooks) || !is_array($group->hooks)) {
             continue;
@@ -146,15 +157,23 @@ foreach ($targets as $t) {
                 $found = true;
                 if ($cmd !== $desired) {
                     $hook->command = $desired;
-                    $changedHere = true;
+                    $updates[] = "path → {$desired}";
+                }
+                // Keep the matcher current too (they change between versions —
+                // state-nudge grew "|Agent"). Only when the group is ours
+                // alone, though: a shared group's matcher belongs to every
+                // hook in it, not just ours.
+                if ($t['matcher'] !== null && count($group->hooks) === 1 && ($group->matcher ?? null) !== $t['matcher']) {
+                    $group->matcher = $t['matcher'];
+                    $updates[] = "matcher → {$t['matcher']}";
                 }
             }
         }
     }
 
     if ($found) {
-        if ($changedHere) {
-            $plan[] = "  [update] {$event} → {$script}: path updated to {$desired}";
+        if ($updates) {
+            $plan[] = "  [update] {$event} → {$script}: " . implode(', ', $updates);
             $changes++;
         } else {
             $plan[] = "  [ok]     {$event} → {$script}: already present and correct";
@@ -209,11 +228,15 @@ if ($dryRun) {
 $willDo = $changes > 0
     ? "back up and update {$settingsPath}"
     : "update file permissions only";
-echo "Proceed? This will {$willDo}. [y/N] ";
-$answer = strtolower(trim((string) fgets(STDIN)));
-if ($answer !== 'y' && $answer !== 'yes') {
-    echo "Aborted — nothing changed.\n";
-    exit(0);
+if ($assumeYes) {
+    echo "Proceeding without confirmation (--yes). This will {$willDo}.\n";
+} else {
+    echo "Proceed? This will {$willDo}. [y/N] ";
+    $answer = strtolower(trim((string) fgets(STDIN)));
+    if ($answer !== 'y' && $answer !== 'yes') {
+        echo "Aborted — nothing changed.\n";
+        exit(0);
+    }
 }
 
 foreach ($chmodNeeded as $path => $script) {

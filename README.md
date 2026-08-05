@@ -3,11 +3,13 @@
 Tiny guardrail scripts for Claude Code. They inspect proposed edits and shell commands, blocking anything that matches rules you define.
 
 The scripts:
-- **`check.php`** — screens file edits (Write/Edit) by file extension + regex
-- **`tool-use.php`** — screens shell commands (Bash) by command pattern + regex
-- **`tool-fails.php`** — logs failed tool calls so you can spot recurring failures (passive — it never blocks anything)
+- **`check.php`** - screens file edits (Write/Edit) by file extension + regex
+- **`tool-use.php`** - screens shell commands (Bash) by command pattern + regex
+- **`tool-fails.php`** - logs failed tool calls so you can spot recurring failures (passive - it never blocks anything)
 - **`prompt-context.php`** - allows you to inject extra context to your prompt based on regex matches
-- **`state-nudge.php`** — tracks files the agent has edited but not re-read and nudges it to re-read them when the count crosses a threshold; also whispers a confidence check after a long friction-free streak of edits, and (on Laravel projects) nudges the agent to hand its new tests to a fresh-eyes reviewer sub-agent after enough test files pile up unreviewed (passive — it never blocks anything)
+- **`state-nudge.php`** - tracks files the agent has edited but not re-read and nudges it to re-read them when the count crosses a threshold; also whispers a confidence check after a long friction-free streak of edits, and (on Laravel projects) nudges the agent to hand its new tests to a fresh-eyes reviewer sub-agent after enough test files pile up unreviewed (passive - it never blocks anything)
+
+`check.php` and `tool-use.php` both load **`em-dash-patterns.php`**, a shared list of every spelling of an em or en dash they block. It isn't a hook, just a file they require.
 
 Plus **`install.php`**, which wires them all into your global Claude Code settings for you.
 
@@ -22,16 +24,16 @@ php install.php
 It adds all the hooks to your global `~/.claude/settings.json` and makes the scripts executable. Before it writes anything it:
 
 - backs your settings up to `settings.json.backup-<timestamp>`,
-- merges with any hooks you already have — it never duplicates or clobbers them,
+- merges with any hooks you already have - it never duplicates or clobbers them,
 - updates the path in place if one of our hooks is already installed but points elsewhere,
 - prints the plan and asks for confirmation.
 
 The command paths it writes are `~`-relative when the repo lives under your home directory (handy if you ever share your settings), or absolute otherwise. Restart Claude Code (or start a new session) for the hooks to take effect.
 
 Flags:
-- `--dry-run` — show the plan and change nothing.
-- `--yes` (or `-y`) — skip the confirmation prompt, for non-interactive runs (the backup still happens first).
-- `--settings=/path/to/settings.json` — target a different file, e.g. a project's `.claude/settings.json`.
+- `--dry-run` - show the plan and change nothing.
+- `--yes` (or `-y`) - skip the confirmation prompt, for non-interactive runs (the backup still happens first).
+- `--settings=/path/to/settings.json` - target a different file, e.g. a project's `.claude/settings.json`.
 
 Prefer to wire it up by hand? See [Manual setup](#manual-setup) below.
 
@@ -40,22 +42,23 @@ Prefer to wire it up by hand? See [Manual setup](#manual-setup) below.
 ### check.php (file edits)
 - Reads JSON from stdin (the hook payload).
 - Detects the file type from `file_path` (supports compound extensions like `.blade.php`).
-- Scans the incoming content for any enabled rule patterns.
+- Scans the incoming content for any enabled rule patterns, both the global ones and this file type's own.
 - Prints violations to stderr and exits with code `2` to block the change.
 
 ### tool-use.php (shell commands)
 - Reads JSON from stdin (the hook payload).
 - Matches the command against each rule's `command_pattern`.
-- Runs the rule's checks — either `require` (pattern must be present) or `forbid` (pattern must not be present).
+- Runs the rule's checks - either `require` (pattern must be present) or `forbid` (pattern must not be present).
 - Appends one log line per call to `tool-use.log` in the format `allowed | command` or `denied | command` (for possibly building a harness-level allow/deny list).
+- The em dash rule is the exception to that first step: its `command_pattern` matches every command, not a particular tool, because `check.php` never sees a file written from the shell. Listing the file-writing commands would just be a list to route around. The cost is that searching for existing em dashes gets caught too.
 - Prints violations to stderr and exits with code `2` to block the command.
 
 ### tool-fails.php (failed tool calls)
 - Reads JSON from stdin (the `PostToolUseFailure` payload).
-- Skips user interrupts (`is_interrupt` is `true`) — that's you pressing escape, not a real failure.
+- Skips user interrupts (`is_interrupt` is `true`) - that's you pressing escape, not a real failure.
 - Appends one line per failure to `tool-fails.log` in the format `timestamp | tool | detail | error` (newlines in the error are flattened to `\n` so each failure stays on one line).
 - `detail` is the Bash `command`, falling back to `file_path` for Write/Edit/Read, then the raw tool input for anything else.
-- Purely passive: it always exits `0` and never blocks a call. It exists to build up empirical data on what fails repeatedly — dodgy CLI flags, BSD-vs-GNU differences, and the like.
+- Purely passive: it always exits `0` and never blocks a call. It exists to build up empirical data on what fails repeatedly - dodgy CLI flags, BSD-vs-GNU differences, and the like.
 
 ### prompt-context.php (prompt context)
 - Reads JSON from stdin (the hook payload).
@@ -63,19 +66,19 @@ Prefer to wire it up by hand? See [Manual setup](#manual-setup) below.
 - If a match is found - adds the rules additional content to the prompt and then submits it to claude as usual.
 
 ### state-nudge.php (state-load nudge)
-A `PostToolUse` hook (matcher `Write|Edit|Read|Agent`) built on a finding from the world-model-collapse paper (arXiv 2606.31399): an agent's internal picture of the files it's juggling goes stale *silently*, before any action visibly fails — so "should I re-check?" can't be left to the agent's judgement. This hook makes the trigger deterministic instead:
+A `PostToolUse` hook (matcher `Write|Edit|Read|Agent`) built on a finding from the world-model-collapse paper (arXiv 2606.31399): an agent's internal picture of the files it's juggling goes stale *silently*, before any action visibly fails - so "should I re-check?" can't be left to the agent's judgement. This hook makes the trigger deterministic instead:
 
-- `Write`/`Edit` marks a file **dirty**; `Read` clears it (as does the file being deleted — a deleted file is no longer live state). The dirty set is tracked per session in `state/<session_id>.json` (subagents get their own file, keyed by `agent_id`, so a busy subagent neither pollutes the parent's count nor misses its own nudge).
-- When the dirty set reaches the model's threshold, the hook injects the set itself into the agent's context — each path, how stale it is, and an instruction to re-read — then disarms. It re-arms only once re-reading shrinks the set back below the threshold, so an agent that re-reads as it goes never hears from it at all. Rare firing is deliberate: a nudge that fires constantly becomes wallpaper.
-- The threshold is **per-model**, because drift-proneness isn't uniform: `haiku` fires at 5, `opus` at 7, `fable`/`mythos` at 10, and anything unrecognised (including all future models) at the default 5 until it earns a longer leash. The model is sniffed from the tail of the session's `transcript_path` — but only once the set has already reached the default threshold, so the quiet path never reads the transcript. Subagent calls always get the default 5, unsniffed. Each firing logs its threshold and detected model, so the numbers can be tuned from evidence later.
-- A second, independent signal — the **confidence check** — rides in the same state file. Twelve consecutive `Write`/`Edit` calls without a single `Read` is the shape of a confident-momentum spiral: a long friction-free streak of editing from the internal model without looking at reality. When the streak hits the threshold the hook injects the evidence (how many blind edits, since when) plus two concrete demands — verify the riskiest unverified assertion, and sweep recent output for exposure (real hostnames, IPs, people's names, secrets) — then disarms. Any `Read` resets the streak and re-arms it. The payload is deliberately a task rather than a "feeling confident?" question: a question can be self-soothed in half a sentence, while "verify one thing and say what you checked" leaves an audit trail in the transcript for judging whether the nudge actually works. `Bash` calls are invisible to this hook, so a session verifying via tests between edits can still trip it — an accepted false positive; a firing costs a minute, and each one is logged (`confidence-fired`) so the threshold can be tuned from evidence.
-- A third signal — the **test-quality nudge** — fires only on Laravel projects (detected by walking up from the edited file to an `artisan` file). Every `Write`/`Edit` to a `.php` file under the project's `tests/` joins a per-session set of *distinct* test files; when the set reaches 4, the hook tells the agent to hand exactly that file list to the [`test-quality-checker` sub-agent](https://github.com/ohnotnow/agentic-stuff) for a fresh-eyes review, framed as work-in-progress so half-built suites aren't dinged for incompleteness. The theory: a test anti-pattern caught at test five is a correction the rest of the session inherits; the same feedback at the end of the feature is just a pile of rework. Instead of an armed flag this signal *ratchets* — ignoring the nudge means it returns only after another 4 unreviewed test files — and launching the sub-agent (the `Agent` matcher exists for this) clears the set entirely. Sessions that get their tests reviewed never hear from it twice. The message rotates between a few phrasings so repeat firings don't habituate into a fixed banner, and if the sub-agent isn't installed (checked in `~/.claude/agents/` and the project's `.claude/agents/`) the nudge is skipped with a `test-nudge-skipped` log line rather than nagging toward a reviewer that isn't there. Counting distinct files rather than edits means debugging one stubborn test all afternoon never trips it; the flip side — a Pest suite keeping a whole feature in one file under-counts — is the accepted direction of error. Firings, skips and resets are all logged, so the threshold can be tuned from evidence.
-- On the (rare) firing path only, it also walks up from the session's `cwd` looking for an `ait` (agent issue tracker) database and appends the in-progress issue(s) to the nudge. Missing db, missing binary, timeout, bad JSON — the ait clause is silently omitted.
+- `Write`/`Edit` marks a file **dirty**; `Read` clears it (as does the file being deleted - a deleted file is no longer live state). The dirty set is tracked per session in `state/<session_id>.json` (subagents get their own file, keyed by `agent_id`, so a busy subagent neither pollutes the parent's count nor misses its own nudge).
+- When the dirty set reaches the model's threshold, the hook injects the set itself into the agent's context - each path, how stale it is, and an instruction to re-read - then disarms. It re-arms only once re-reading shrinks the set back below the threshold, so an agent that re-reads as it goes never hears from it at all. Rare firing is deliberate: a nudge that fires constantly becomes wallpaper.
+- The threshold is **per-model**, because drift-proneness isn't uniform: `haiku` fires at 5, `opus` at 7, `fable`/`mythos` at 10, and anything unrecognised (including all future models) at the default 5 until it earns a longer leash. The model is sniffed from the tail of the session's `transcript_path` - but only once the set has already reached the default threshold, so the quiet path never reads the transcript. Subagent calls always get the default 5, unsniffed. Each firing logs its threshold and detected model, so the numbers can be tuned from evidence later.
+- A second, independent signal - the **confidence check** - rides in the same state file. Twelve consecutive `Write`/`Edit` calls without a single `Read` is the shape of a confident-momentum spiral: a long friction-free streak of editing from the internal model without looking at reality. When the streak hits the threshold the hook injects the evidence (how many blind edits, since when) plus two concrete demands - verify the riskiest unverified assertion, and sweep recent output for exposure (real hostnames, IPs, people's names, secrets) - then disarms. Any `Read` resets the streak and re-arms it. The payload is deliberately a task rather than a "feeling confident?" question: a question can be self-soothed in half a sentence, while "verify one thing and say what you checked" leaves an audit trail in the transcript for judging whether the nudge actually works. `Bash` calls are invisible to this hook, so a session verifying via tests between edits can still trip it - an accepted false positive; a firing costs a minute, and each one is logged (`confidence-fired`) so the threshold can be tuned from evidence.
+- A third signal - the **test-quality nudge** - fires only on Laravel projects (detected by walking up from the edited file to an `artisan` file). Every `Write`/`Edit` to a `.php` file under the project's `tests/` joins a per-session set of *distinct* test files; when the set reaches 4, the hook tells the agent to hand exactly that file list to the [`test-quality-checker` sub-agent](https://github.com/ohnotnow/agentic-stuff) for a fresh-eyes review, framed as work-in-progress so half-built suites aren't dinged for incompleteness. The theory: a test anti-pattern caught at test five is a correction the rest of the session inherits; the same feedback at the end of the feature is just a pile of rework. Instead of an armed flag this signal *ratchets* - ignoring the nudge means it returns only after another 4 unreviewed test files - and launching the sub-agent (the `Agent` matcher exists for this) clears the set entirely. Sessions that get their tests reviewed never hear from it twice. The message rotates between a few phrasings so repeat firings don't habituate into a fixed banner, and if the sub-agent isn't installed (checked in `~/.claude/agents/` and the project's `.claude/agents/`) the nudge is skipped with a `test-nudge-skipped` log line rather than nagging toward a reviewer that isn't there. Counting distinct files rather than edits means debugging one stubborn test all afternoon never trips it; the flip side - a Pest suite keeping a whole feature in one file under-counts - is the accepted direction of error. Firings, skips and resets are all logged, so the threshold can be tuned from evidence.
+- On the (rare) firing path only, it also walks up from the session's `cwd` looking for an `ait` (agent issue tracker) database and appends the in-progress issue(s) to the nudge. Missing db, missing binary, timeout, bad JSON - the ait clause is silently omitted.
 - Firings are logged to `state-nudge.log`; state files from long-dead sessions are pruned opportunistically.
 
-Some imprecision is deliberate (see the comment in the script): `grep`/`cat` glances don't clear the dirty flag, and a brand-new `Write` counts as dirty. Resist the urge to add a taxonomy of edit types — the counter is meant to be cheap and legible.
+Some imprecision is deliberate (see the comment in the script): `grep`/`cat` glances don't clear the dirty flag, and a brand-new `Write` counts as dirty. Resist the urge to add a taxonomy of edit types - the counter is meant to be cheap and legible.
 
-**Caveat — piped commands hide failures.** `PostToolUseFailure` fires on the *tool call's* exit code, and a pipeline reports the exit code of its *last* command. So `some-cmd | head`, `some-cmd | grep …`, or `some-cmd || true` look successful even when `some-cmd` failed, and won't be logged. Bare failing commands are caught fine.
+**Caveat - piped commands hide failures.** `PostToolUseFailure` fires on the *tool call's* exit code, and a pipeline reports the exit code of its *last* command. So `some-cmd | head`, `some-cmd | grep …`, or `some-cmd || true` look successful even when `some-cmd` failed, and won't be logged. Bare failing commands are caught fine.
 
 ## Custom rules
 
@@ -90,6 +93,8 @@ Add a new rule by appending an array with:
 
 Add a new file type by creating a new extension key (e.g., `'py'`, `'js'`) and listing rules under it.
 
+The `'*'` key is special: rules under it are checked on every file, whatever the extension, and stack on top of that file type's own rules. It also catches types with no key of their own, which is otherwise a silent pass. The dash ban lives there, and it is deliberately paranoid: as well as the literal characters (em dash, en dash, figure dash, horizontal bar, the two- and three-em variants and the vertical forms) it blocks the ways round them - HTML entities named, decimal and hex, string escapes in the JS, PHP, Go, Python, PCRE and CSS syntaxes, backslash-escaped byte triples in hex and octal, and `chr()`-style construction from the code point. The en dash is in scope because it is the obvious substitute once the em dash stops working, and a hyphen reads fine in a range like 1939-45. The minus sign U+2212 is left alone, since it has honest work to do in maths. Both messages end with a `sed` recipe to clean up a project that is already full of them, addressed to you rather than to the agent, since it rewrites files in place across the whole tree. The patterns live in `em-dash-patterns.php` rather than inline, because `tool-use.php` applies the same set to shell commands: a heredoc or a `sed -i` would otherwise write a file without this hook being consulted at all, and the looser of two separately maintained copies would quietly become the way round both. Two holes remain, both past what a regex can see: a character assembled by arithmetic, and one smuggled in base64, where the encoding shifts with byte alignment so no single literal catches it.
+
 ### Command rules
 Rules live in `tool-use.php` under the `$rules` array, keyed by a descriptive name.
 
@@ -100,7 +105,7 @@ Each rule has a `command_pattern` (regex to match the command) and a `checks` ar
 - `message`: what to show when the check fails
 
 ## Manual setup
-`install.php` does all of this for you, but if you'd rather wire it up by hand: add the guardrails as `PreToolUse` hooks, the state nudge as a `PostToolUse` hook, the failure logger as a `PostToolUseFailure` hook (no matcher, so it catches every tool), and the prompt context injector as a `UserPromptSubmit` hook (no matcher there either — it isn't tool-scoped):
+`install.php` does all of this for you, but if you'd rather wire it up by hand: add the guardrails as `PreToolUse` hooks, the state nudge as a `PostToolUse` hook, the failure logger as a `PostToolUseFailure` hook (no matcher, so it catches every tool), and the prompt context injector as a `UserPromptSubmit` hook (no matcher there either - it isn't tool-scoped):
 
 ```json
 {
@@ -161,9 +166,9 @@ Each rule has a `command_pattern` (regex to match the command) and a `checks` ar
 ```
 
 ## Notes
-- All the hook scripts expect JSON on stdin from the Claude Code hook system. (`install.php` is the exception — it's a one-off CLI you run yourself, not a hook.)
+- All the hook scripts expect JSON on stdin from the Claude Code hook system. (`install.php` is the exception - it's a one-off CLI you run yourself, not a hook.)
 - `check.php` reads `tool_input.file_path` and either `tool_input.content` or `tool_input.new_string`.
 - `tool-use.php` reads `tool_input.command`.
 - `tool-fails.php` reads `tool_name`, `tool_input`, `error`, and `is_interrupt`.
-- `state-nudge.php` reads `session_id`, `agent_id`, `transcript_path`, `cwd`, `tool_name`, `tool_input.file_path`, and (on `Agent` calls) `tool_input.subagent_type`. Unlike the others, its output is the JSON `hookSpecificOutput.additionalContext` envelope on stdout — for `PostToolUse`, plain stdout text does **not** reach the agent.
+- `state-nudge.php` reads `session_id`, `agent_id`, `transcript_path`, `cwd`, `tool_name`, `tool_input.file_path`, and (on `Agent` calls) `tool_input.subagent_type`. Unlike the others, its output is the JSON `hookSpecificOutput.additionalContext` envelope on stdout - for `PostToolUse`, plain stdout text does **not** reach the agent.
 - For the `PreToolUse` guardrails, exit code `0` allows the action and exit code `2` blocks it. `tool-fails.php` and `state-nudge.php` are passive and always exit `0`.

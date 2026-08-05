@@ -1,7 +1,10 @@
 #!/usr/bin/env php
 <?php
-// Human co-author trailers are fine — this only matches AI/vendor attribution.
+// Human co-author trailers are fine - this only matches AI/vendor attribution.
 $aiAttributionPattern = '/co-authored-by:.*\b(claude|anthropic|openai|codex|gpt)\b|generated with.*\bclaude\b|noreply@anthropic\.com/i';
+
+// Shared with check.php, which applies the same patterns to file content.
+$emDashRules = require __DIR__ . '/em-dash-patterns.php';
 
 $rules = [
     'pest' => [
@@ -21,7 +24,7 @@ $rules = [
             [
                 'enabled' => true,
                 'type' => 'forbid',
-                // Subcommand must directly follow the tool — a bare substring
+                // Subcommand must directly follow the tool - a bare substring
                 // match here blocked any composer call whose command text
                 // merely contained "update" somewhere (e.g. in a commit
                 // message or file name).
@@ -49,7 +52,7 @@ $rules = [
                 'type' => 'forbid',
                 // Anchored to the real install forms. The old bare
                 // '/(add|install)/' fired on the substring "add" anywhere in
-                // a command that also mentioned uv — e.g. 'uv run pytest'
+                // a command that also mentioned uv - e.g. 'uv run pytest'
                 // bundled with 'ant add', or scripts/add_occasion.py.
                 'pattern' => '/\b(?:uv\s+add|uv\s+pip\s+install|pip3?\s+install)\b/',
                 'message' => "Never install or update a package without explicit permission. Ask first.",
@@ -57,7 +60,7 @@ $rules = [
         ],
     ],
     'env' => [
-        // Loose gate — fast triage of commands worth examining.
+        // Loose gate - fast triage of commands worth examining.
         'command_pattern' => '/(\.env\b|\bdeclare\b|\bexport\b|\bprintenv\b|\benv\b|config:show)/',
         'checks' => [
             [
@@ -68,7 +71,7 @@ $rules = [
                 // newline, or '(' ), not buried in a string argument like
                 // an --description value. The (?=\s|$|\|) lookahead matches
                 // the command followed by whitespace, end-of-line, or a
-                // pipe — so 'envsubst' and 'environment' don't trigger.
+                // pipe - so 'envsubst' and 'environment' don't trigger.
                 'pattern' => '/(\.env\b|(?:^|[;\n&|(]\s*)(?:declare|export|printenv|env)(?=\s|$|\|))/',
                 'message' => "Never read or modify .env, dump env vars (declare/export/printenv/env), or set new ones without explicit permission. Ask first.",
             ],
@@ -95,6 +98,19 @@ $rules = [
                 'message' => "Do NOT add AI attribution to pull requests. No 'Generated with Claude Code' footers, no Co-Authored-By trailers. Re-run with those lines removed.",
             ],
         ],
+    ],
+    // check.php only ever sees Write and Edit, so a heredoc, a sed -i, a tee or
+    // a printf redirect would otherwise drop an em dash into a file without any
+    // hook being consulted. Listing the file-writing commands would just be a
+    // list to route around, so every command is screened and the forbid
+    // patterns do the work. The cost is that searching for existing em dashes
+    // is caught too, which is the accepted direction of error.
+    'em-dash' => [
+        'command_pattern' => '/./s',
+        'checks' => array_map(
+            fn (array $rule) => ['type' => 'forbid'] + $rule,
+            $emDashRules
+        ),
     ],
 ];
 

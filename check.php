@@ -1,6 +1,10 @@
 #!/usr/bin/env php
 <?php
 $rules = [
+    // Rules under '*' are checked on every file, whatever its extension -
+    // including types with no bucket of their own, like .md, .json or .txt.
+    // Shared with tool-use.php, which applies the same patterns to commands.
+    '*' => require __DIR__ . '/em-dash-patterns.php',
     'php' => [
         [
             'enabled' => true,
@@ -70,7 +74,7 @@ $rules = [
         [
             'enabled' => true,
             'pattern' => '/->decimal\s*\(/i',
-            'message' => "Don't use decimal columns - use intefers and multiply/divide in code. Ask the user if you really need this.",
+            'message' => "Don't use decimal columns - use integers and multiply/divide in code. Ask the user if you really need this.",
         ],
     ],
     'py' => [
@@ -95,14 +99,17 @@ if (str_ends_with(strtolower($filePath), '.blade.php')) {
     $extension = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
 }
 
-// No rules for this file type? Allow it.
-if (!isset($rules[$extension])) {
+// Global rules apply to every file; this type's own rules stack on top.
+$activeRules = array_merge($rules['*'] ?? [], $rules[$extension] ?? []);
+
+// Nothing to check for this file type? Allow it.
+if (!$activeRules) {
     exit(0);
 }
 
 // Check all enabled rules
 $violations = [];
-foreach ($rules[$extension] as $rule) {
+foreach ($activeRules as $rule) {
     if (!$rule['enabled']) {
         continue;
     }

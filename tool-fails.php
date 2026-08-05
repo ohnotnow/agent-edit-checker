@@ -4,7 +4,7 @@
 // tool-fails.log, to build up empirical data on what fails repeatedly.
 $input = json_decode(file_get_contents('php://stdin'), true);
 
-// is_interrupt means the user hit escape — not a real tool failure, so skip.
+// is_interrupt means the user hit escape - not a real tool failure, so skip.
 if (!empty($input['is_interrupt'])) {
     exit(0);
 }

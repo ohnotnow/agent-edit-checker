@@ -1,6 +1,6 @@
 #!/usr/bin/env php
 <?php
-// prompt-context.php — a UserPromptSubmit hook. Unlike check.php / tool-use.php
+// prompt-context.php - a UserPromptSubmit hook. Unlike check.php / tool-use.php
 // it never blocks: it reads the submitted prompt, and for each matching rule it
 // writes a block of guidance to STDOUT. On exit 0 that stdout is added to the
 // agent's context for the turn. So: STDOUT (not STDERR), and always exit 0.
@@ -9,7 +9,7 @@ $rules = [
         'enabled' => true,
         'pattern' => '/\?/',
         'message' => <<<'TXT'
-A question mark slipped into this prompt — pause before you reach for a tool. Decide first: is the user asking to understand / weigh / decide, or telling you to change something?
+A question mark slipped into this prompt - pause before you reach for a tool. Decide first: is the user asking to understand / weigh / decide, or telling you to change something?
 - Question, or you're not sure → answer in words only this turn. Lay out the options, give your recommendation, then stop and ask if they want you to go ahead. No files touched, no tests written, no scaffolding spun up.
 - Build only on an unmistakable instruction in THIS message ("do it", "add the test", "go ahead"). A green light from an earlier turn does not carry forward.
 - If you're torn, treat it as a question. "What are the trade-offs?" is not a work order.
@@ -20,7 +20,7 @@ TXT,
         'enabled' => true,
         'pattern' => '/\bkk\b/',
         'message' => <<<'TXT'
-A `kk` slipped into this prompt — verify before you answer. Judge the claim first: is it volatile (prices, versions, limits, anything "current"), specific (a number, date, a name), or something the user will act on? If so, check a real source before answering — web search and fetch the actual docs for external facts, the actual files or commands for local ones. Don't answer from memory, even when you're confident. Stable, conceptual knowledge you can answer directly. When you're unsure, verify. Cite where you checked each claim.
+A `kk` slipped into this prompt - verify before you answer. Judge the claim first: is it volatile (prices, versions, limits, anything "current"), specific (a number, date, a name), or something the user will act on? If so, check a real source before answering - web search and fetch the actual docs for external facts, the actual files or commands for local ones. Don't answer from memory, even when you're confident. Stable, conceptual knowledge you can answer directly. When you're unsure, verify. Cite where you checked each claim.
 TXT,
     ],
 
@@ -28,11 +28,11 @@ TXT,
         'enabled' => true,
         'pattern' => '/\b(recommend|how should (we|i)|which (option|approach)|what.?s your (thinking|take)|should (we|i) use)\b/i',
         'message' => <<<'TXT'
-This looks like you're being asked for a recommendation, an opinion, or a "which approach" call. If it touches this codebase, load the `grounded-recommendation` skill if available and read the relevant code first — don't recommend from memory or from what you assume the code does.
+This looks like you're being asked for a recommendation, an opinion, or a "which approach" call. If it touches this codebase, load the `grounded-recommendation` skill if available and read the relevant code first - don't recommend from memory or from what you assume the code does.
 TXT,
     ],
 
-    // Disabled global example — matches every prompt. See the message for why
+    // Disabled global example - matches every prompt. See the message for why
     // it's off, and why CLAUDE.md is almost always the better home.
     [
         'enabled' => false,
@@ -40,7 +40,7 @@ TXT,
         'message' => <<<'TXT'
 A global rule. This pattern matches every prompt, so whatever sits in this message would be injected on every single turn.
 
-It's disabled on purpose. Standing rules that should ALWAYS apply belong in CLAUDE.md — that file is already in context every turn, so repeating it here just duplicates it (and trains the agent to skim injected text). Keep this hook for CONDITIONAL nudges, like the question rule above, where the injection only shows up when it's actually relevant.
+It's disabled on purpose. Standing rules that should ALWAYS apply belong in CLAUDE.md - that file is already in context every turn, so repeating it here just duplicates it (and trains the agent to skim injected text). Keep this hook for CONDITIONAL nudges, like the question rule above, where the injection only shows up when it's actually relevant.
 
 The one honest exception: if a key instruction tends to drift out of attention over a long session, a periodic re-injection here can keep it fresh. If that is genuinely what you want, edit this message and flip 'enabled' to true. Otherwise, reach for CLAUDE.md.
 TXT,

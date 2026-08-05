@@ -1,6 +1,6 @@
 #!/usr/bin/env php
 <?php
-// install.php — wire the agent-edit-checker guardrail hooks into your global
+// install.php - wire the agent-edit-checker guardrail hooks into your global
 // ~/.claude/settings.json. It backs the file up first, merges cleanly with any
 // hooks you already have, and never creates duplicates.
 //
@@ -17,13 +17,13 @@
 // somewhere like /Volumes/MyCodeDrive/agent-edit-checker.
 //
 // Settings are parsed into objects (not associative arrays) so that empty JSON
-// objects elsewhere in your file — "mcpServers": {} and the like — survive the
+// objects elsewhere in your file - "mcpServers": {} and the like - survive the
 // round-trip instead of silently turning into [].
 
 $args = array_slice($argv, 1);
 
 if (in_array('--help', $args, true) || in_array('-h', $args, true)) {
-    // The help text is the header comment above — print it however long it is.
+    // The help text is the header comment above - print it however long it is.
     foreach (file(__FILE__) as $line) {
         if (str_starts_with($line, '#!') || str_starts_with($line, '<?php')) {
             continue;
@@ -102,11 +102,11 @@ if ($settingsExisted) {
     if (trim($raw) !== '') {
         $decoded = json_decode($raw);
         if (json_last_error() !== JSON_ERROR_NONE) {
-            fwrite(STDERR, "Couldn't parse {$settingsPath} as JSON (" . json_last_error_msg() . ") — leaving it untouched.\n");
+            fwrite(STDERR, "Couldn't parse {$settingsPath} as JSON (" . json_last_error_msg() . ") - leaving it untouched.\n");
             exit(1);
         }
         if (!($decoded instanceof stdClass)) {
-            fwrite(STDERR, "{$settingsPath} isn't a JSON object at the top level — leaving it untouched.\n");
+            fwrite(STDERR, "{$settingsPath} isn't a JSON object at the top level - leaving it untouched.\n");
             exit(1);
         }
         $settings = $decoded;
@@ -120,7 +120,7 @@ if (!isset($settings->hooks)) {
 } elseif ($settings->hooks === [] /* empty array encoding of {} */) {
     $settings->hooks = new stdClass();
 } elseif (!($settings->hooks instanceof stdClass)) {
-    fwrite(STDERR, "The \"hooks\" key in {$settingsPath} isn't a JSON object — leaving it untouched.\n");
+    fwrite(STDERR, "The \"hooks\" key in {$settingsPath} isn't a JSON object - leaving it untouched.\n");
     exit(1);
 }
 
@@ -137,12 +137,12 @@ foreach ($targets as $t) {
     if (!isset($settings->hooks->{$event})) {
         $settings->hooks->{$event} = [];
     } elseif (!is_array($settings->hooks->{$event})) {
-        fwrite(STDERR, "\"hooks.{$event}\" in {$settingsPath} isn't a JSON array — leaving it untouched.\n");
+        fwrite(STDERR, "\"hooks.{$event}\" in {$settingsPath} isn't a JSON array - leaving it untouched.\n");
         exit(1);
     }
 
     // Is one of our hooks already registered for this event? Match on the
-    // script's filename appearing in a command — the basenames are distinct, so
+    // script's filename appearing in a command - the basenames are distinct, so
     // there's no risk of one matching another. ($group / $hook are objects, so
     // assigning to them mutates $settings in place.)
     $found = false;
@@ -159,7 +159,7 @@ foreach ($targets as $t) {
                     $hook->command = $desired;
                     $updates[] = "path → {$desired}";
                 }
-                // Keep the matcher current too (they change between versions —
+                // Keep the matcher current too (they change between versions -
                 // state-nudge grew "|Agent"). Only when the group is ours
                 // alone, though: a shared group's matcher belongs to every
                 // hook in it, not just ours.
@@ -181,7 +181,7 @@ foreach ($targets as $t) {
         continue;
     }
 
-    // Not there — append a new group, leaving everyone else's hooks alone.
+    // Not there - append a new group, leaving everyone else's hooks alone.
     $group = new stdClass();
     if ($t['matcher'] !== null) {
         $group->matcher = $t['matcher'];
@@ -214,12 +214,12 @@ echo implode("\n", $plan) . "\n\n";
 
 $hasWork = $changes > 0 || count($chmodNeeded) > 0;
 if (!$hasWork) {
-    echo "Everything's already wired up correctly — nothing to do. 👍\n";
+    echo "Everything's already wired up correctly - nothing to do. 👍\n";
     exit(0);
 }
 
 if ($dryRun) {
-    echo "Dry run — no files were changed.\n";
+    echo "Dry run - no files were changed.\n";
     exit(0);
 }
 
@@ -234,14 +234,14 @@ if ($assumeYes) {
     echo "Proceed? This will {$willDo}. [y/N] ";
     $answer = strtolower(trim((string) fgets(STDIN)));
     if ($answer !== 'y' && $answer !== 'yes') {
-        echo "Aborted — nothing changed.\n";
+        echo "Aborted - nothing changed.\n";
         exit(0);
     }
 }
 
 foreach ($chmodNeeded as $path => $script) {
     if (!@chmod($path, 0755)) {
-        fwrite(STDERR, "Warning: couldn't make {$script} executable — you may need to chmod +x it yourself.\n");
+        fwrite(STDERR, "Warning: couldn't make {$script} executable - you may need to chmod +x it yourself.\n");
     }
 }
 
@@ -249,21 +249,21 @@ if ($changes > 0) {
     if ($settingsExisted) {
         $backup = $settingsPath . '.backup-' . date('Ymd-His');
         if (!@copy($settingsPath, $backup)) {
-            fwrite(STDERR, "Couldn't write a backup to {$backup} — aborting before touching settings.\n");
+            fwrite(STDERR, "Couldn't write a backup to {$backup} - aborting before touching settings.\n");
             exit(1);
         }
         echo "Backed up existing settings to {$backup}\n";
     } else {
         $dir = dirname($settingsPath);
         if (!is_dir($dir) && !@mkdir($dir, 0755, true)) {
-            fwrite(STDERR, "Couldn't create {$dir} — aborting.\n");
+            fwrite(STDERR, "Couldn't create {$dir} - aborting.\n");
             exit(1);
         }
     }
 
     $json = json_encode($settings, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     if ($json === false) {
-        fwrite(STDERR, "Failed to encode the settings JSON — aborting (your file is untouched).\n");
+        fwrite(STDERR, "Failed to encode the settings JSON - aborting (your file is untouched).\n");
         exit(1);
     }
 
